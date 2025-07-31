@@ -1,0 +1,69 @@
+import tensorflow as tf
+from tensorflow.keras.applications import ResNet50
+from tensorflow.keras.applications.resnet50 import preprocess_input
+from tensorflow.keras.preprocessing import image
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+import matplotlib.pyplot as plt
+from google.colab import files
+
+# Carregar modelo pré-treinado
+model = ResNet50(weights='imagenet', include_top=False, pooling='avg')
+
+# Função para extrair features de uma imagem
+def extract_features(img_path):
+    img = image.load_img(img_path, target_size=(224, 224))
+    img_array = image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    img_array = preprocess_input(img_array)
+    features = model.predict(img_array)
+    return features.flatten()
+
+# Carregar Fashion-MNIST como base inicial
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.fashion_mnist.load_data()
+print("Fashion-MNIST carregado com", x_train.shape[0] + x_test.shape[0], "imagens.")
+
+# Pré-processar imagens do Fashion-MNIST (redimensionar para 224x224)
+def preprocess_mnist_images(images):
+    processed_images = []
+    for img in images:
+        img = tf.image.resize(img, [224, 224])
+        img_array = np.expand_dims(img, axis=-1)
+        img_array = np.repeat(img_array, 3, axis=-1)  # Converter para RGB
+        img_array = preprocess_input(img_array)
+        processed_images.append(img_array)
+    return np.array(processed_images)
+
+# Selecionar um subconjunto (ex.: 100 imagens de teste) para acelerar
+x_test_processed = preprocess_mnist_images(x_test[:100])
+mnist_features = [model.predict(img) for img in x_test_processed]
+
+# Upload de imagens personalizadas (ex.: relógios)
+print("Por favor, envie imagens de relógios para comparação.")
+uploaded = files.upload()
+custom_image_paths = list(uploaded.keys())
+custom_features = [extract_features(path) for path in custom_image_paths]
+
+# Combinar features (Fashion-MNIST + imagens personalizadas)
+all_features = mnist_features + custom_features
+all_image_ids = list(range(len(mnist_features))) + custom_image_paths
+
+# Calcular similaridade
+similarity_matrix = cosine_similarity(all_features)
+
+# Recomendar com base na primeira imagem personalizada
+if custom_features:
+    target_idx = len(mnist_features)  # Primeira imagem personalizada
+    similarities = list(enumerate(similarity_matrix[target_idx]))
+    similarities = sorted(similarities, key=lambda x: x[1], reverse=True)
+    print(f"Recomendações com base no relógio {custom_image_paths[0]}:")
+    for idx, score in similarities[1:4]:  # Top 3 recomendações
+        print(f"Imagem {all_image_ids[idx]} - Similaridade: {score:.4f}")
+else:
+    print("Nenhuma imagem personalizada enviada.")
+
+# Visualizar matriz de similaridade (opcional)
+plt.imshow(similarity_matrix, cmap='hot', interpolation='nearest')
+plt.colorbar()
+plt.title('Matriz de Similaridade')
+plt.show()
